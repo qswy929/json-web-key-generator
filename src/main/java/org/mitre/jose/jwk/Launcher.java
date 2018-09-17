@@ -41,7 +41,7 @@ public class Launcher {
         options = new Options();
 
         options.addOption("t", true, "Key Type, one of: " + KeyType.RSA.getValue() + ", " + KeyType.OCT.getValue() + ", " +
-                KeyType.EC.getValue());
+                KeyType.EC.getValue() + ", simple");
         options.addOption("s", true, "Key Size in bits, required for RSA and oct key types. Must be an integer divisible by 8");
         options.addOption("u", true, "Usage, one of: enc, sig (optional)");
         options.addOption("a", true, "Algorithm (optional)");
@@ -53,6 +53,7 @@ public class Launcher {
         options.addOption("S", false, "Wrap the generated key in a KeySet");
         options.addOption("o", true, "Write output to file (will append to existing KeySet if -S is used), No Display of Key "
 				+ "Material");
+        options.addOption("k", true, "Kubernetes Service Account Token");
 
         CommandLineParser parser = new PosixParser();
         try {
@@ -68,6 +69,7 @@ public class Launcher {
             boolean pubKey = cmd.hasOption("p");
             boolean doNotGenerateKid = cmd.hasOption("I");
             String outFile = cmd.getOptionValue("o");
+            String token = cmd.getOptionValue("k");
 
             // check for required fields
             if (kty == null) {
@@ -129,7 +131,25 @@ public class Launcher {
                 }
                 Curve keyCurve = Curve.parse(crv);
                 jwk = ECKeyMaker.make(keyCurve, keyUse, keyAlg, kid);
-            } else {
+            } else if (keyType.getValue().equalsIgnoreCase("simple")) {
+                if (Strings.isNullOrEmpty(size)) {
+                    printUsageAndExit("Key size (in bits) is required for key type " + keyType);
+                }
+                Integer keySize = Integer.decode(size);
+                if (keySize % 8 != 0) {
+                    printUsageAndExit("Key size (in bits) must be divisible by 8, got " + keySize);
+                }
+                if (Strings.isNullOrEmpty(token)) {
+                    printUsageAndExit("Token can't be empty when key type is 'simple'");
+                }
+                String[] parts = token.split(".");
+                if (parts.length != 3) {
+                    printUsageAndExit("Invalid token format.");
+                }
+
+                jwk = SimapleOctetSequenceKeyMaker.make(keySize, keyUse, keyAlg, kid, parts[1]);
+            }
+            else {
                 printUsageAndExit("Unknown key type: " + keyType);
             }
 
